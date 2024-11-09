@@ -1,3 +1,6 @@
+`timescale 1ns / 1ps
+
+
 //8 bit 2 to 1 multiplexer
 module mux_2x1_8 (output reg [7:0] Z,
                   input [7:0] A, B, 
@@ -23,6 +26,7 @@ module alu (input [7:0] A, B,
       5'b00010: Z = A; 				// input A
       5'b00011: Z = B; 				// input B
       5'b01100: {Cout,Z} = A-B; 	// subtract
+      5'b01110: {Cout,Z} = A*B;     // multiply
       5'b10100: {Cout,Z} = A + 1; 	// increment
       5'b10000: Z = A; 				// input A
       5'b00100: {Cout,Z} = A+B+1;   // add and increment
@@ -106,7 +110,7 @@ endmodule
 module instruction_decoder (input [7:0] A,
                             input DECODE, EXECUTE,
                             output reg ADD, LOAD, OUTPUT, INPUT, JUMPZ, 
-                            	   JUMP, JUMPNZ, JUMPC, JUMPNC, SUB, BITAND);
+                            	   JUMP, JUMPNZ, JUMPC, JUMPNC, SUB, BITAND, MUL);
   reg or_out;
    
   always @(*) begin
@@ -119,15 +123,16 @@ module instruction_decoder (input [7:0] A,
         8'b0100xxxx: ADD = 1;
         8'b1000xxxx: JUMP = 1;
         8'b0110xxxx: SUB = 1;
+        8'b0111xxxx: MUL = 1;
         8'b0001xxxx: BITAND = 1;
         8'b100100xx: JUMPZ = 1;
         8'b100101xx: JUMPNZ = 1;
         8'b100110xx: JUMPC = 1;
         8'b100111xx: JUMPNC = 1;
-        default: {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND} = 11'b00000000000;
+        default: {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND,MUL} = 12'b00000000000;
       endcase
     else
-      {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND} = 11'b00000000000;
+      {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND,MUL} = 12'b00000000000;
   end
 endmodule
 
@@ -137,7 +142,7 @@ module decoder (input [7:0] IR,
                 input Carry, Zero, CLK, CE, CLR,
                 output reg RAM, ALU_S4, ALU_S3, ALU_S2, ALU_S1, ALU_S0, MUXA, MUXB, MUXC, EN_IN, EN_DA, EN_PC );
   
-  wire fetch, decode, execute, increment, carry_reg, zero_reg, add, load, instr_output, instr_input, jumpz, jump, jumpnz, jumpc, jumpnc, sub, bitand, jump_not_taken;
+  wire fetch, decode, execute, increment, carry_reg, zero_reg, add, load, instr_output, instr_input, jumpz, jump, jumpnz, jumpc, jumpnc, sub, bitand, jump_not_taken, mul;
   
   reg en_st, OR5, FDC_D_B4_INV;
   
@@ -148,25 +153,25 @@ module decoder (input [7:0] IR,
   register_2 zero_carry(.D({Zero,Carry}), .CLK(CLK), .CE(en_st), .CLR(CLR), .Q({zero_reg,carry_reg}));
   
   // place instruction decoder module with explicit port connnections
-  instruction_decoder instruction_decoder(.A(IR), .DECODE(decode), .EXECUTE(execute), .ADD(add), .LOAD(load), .OUTPUT(instr_output), .INPUT(instr_input), .JUMPZ(jumpz), .JUMP(jump), .JUMPNZ(jumpnz), .JUMPC(jumpc), .JUMPNC(jumpnc), .SUB(sub), .BITAND(bitand));
+  instruction_decoder instruction_decoder(.A(IR), .DECODE(decode), .EXECUTE(execute), .ADD(add), .LOAD(load), .OUTPUT(instr_output), .INPUT(instr_input), .JUMPZ(jumpz), .JUMP(jump), .JUMPNZ(jumpnz), .JUMPC(jumpc), .JUMPNC(jumpnc), .SUB(sub), .BITAND(bitand), .MUL(mul));
   
   // jump not taken register
   dff jump_n_taken(.D(~FDC_D_B4_INV), .CE(1'b1), .CLR(CLR), .C(CLK), .Q(jump_not_taken));
   
   always @(*) begin   // combinational logic
-    en_st = (add|sub|bitand);
+    en_st = (add|sub|bitand|mul);
     RAM = (execute&instr_output);
     OR5 = (jump|jumpz|jumpnz|jumpc|jumpnc);
     ALU_S0 = (OR5|load|instr_input|bitand);
-    ALU_S1 = (OR5|instr_output|instr_input|load);
-    ALU_S2 = (increment|sub);
-    ALU_S3 = sub;
+    ALU_S1 = (OR5|instr_output|instr_input|load|mul);
+    ALU_S2 = (increment|sub|mul);
+    ALU_S3 = (sub|mul);
     ALU_S4 = increment;
     MUXA = increment;
-    MUXB = (load|add|bitand|sub);
+    MUXB = (load|add|bitand|sub|mul);
     MUXC = (instr_input|instr_output);
     EN_IN = fetch;
-    EN_DA = (execute&(load|add|sub|bitand|instr_input));
+    EN_DA = (execute&(load|add|sub|bitand|mul|instr_input));
     FDC_D_B4_INV = ((jumpz&zero_reg)|(jumpnz&(~zero_reg))|(jumpc&carry_reg)|(jumpnc&(~carry_reg))|jump);
     EN_PC = ((increment&jump_not_taken)|(execute&FDC_D_B4_INV));
   end
@@ -192,6 +197,9 @@ module ram(input we, clk,
     if (~we) 
       dout <= mem[addr];
   end
+
+
+
  
 endmodule
 
@@ -208,6 +216,9 @@ module cpu (input NCLR, CLK,
   wire FD_CLR, FDCE_Q, EN_IN, EN_PC, EN_DA, ALU_S4,ALU_S3,ALU_S2,ALU_S1,ALU_S0, CARRY, RAM_WE, MUXA, MUXB, MUXC;
   wire [7:0] ACC_Q, MUX_A_Q, MUX_B_Q, MUX_C_Q, PC_Q, ALU_Q;
   wire [15:0] CPU_DI, IR_Q;
+  
+  reg [15:0] code [255:0];
+  
   
   
   reg [15:0] CPU_DO;
@@ -263,6 +274,57 @@ module cpu (input NCLR, CLK,
     
     // Serial ouptut for use with oscilloscope if programming an FPGA
     SERIAL_OUT = ~FDCE_Q;
+   
+
+    
   end
+  
+  
+    // PROGRAMMING INSTRUCTIONS
+    parameter INPUT = 8'b10100000;
+    parameter OUTPUT = 8'b11100000;
+    parameter LOAD = 8'b00000000;
+    parameter ADD = 8'b01000000;
+    parameter JUMP = 8'b10000000;
+    parameter SUB = 8'b01100000;
+    parameter MUL = 8'b01110000;
+    parameter BITAND = 8'b00010000;
+    parameter JUMPZ = 8'b10010000;
+    parameter JUMPNZ = 8'b10010100;
+    parameter JUMPC = 8'b10011000;
+    parameter JUMPNC = 8'b10011100;
+    
+    initial
+    begin
+    // PROGRAMMING
+    
+    //    ram.mem[8'h00] = {INPUT, 8'd7};
+    //    ram.mem[8'h01] = {ADD, 8'd1};
+    //    ram.mem[8'h02] = {OUTPUT, 8'd8};
+    //    ram.mem[8'h03] = {LOAD, 8'd255};
+    //    ram.mem[8'h04] = {SUB, 8'd2};
+    //    ram.mem[8'h05] = {OUTPUT, 8'd9};
+    //    ram.mem[8'h06] = {JUMP, 8'd0};
+    //    ram.mem[8'h07] = {8'd0, 8'd4};
+        ram.mem[8'h00] = {LOAD, 8'd2};
+        ram.mem[8'h01] = {MUL, 8'd3};
+        ram.mem[8'h02] = {OUTPUT, 8'd3};
+        
+    end
+    
+    always @(*) begin
+        code[8'h00] = memory.mem[8'h00];
+        code[8'h01] = memory.mem[8'h01];
+        code[8'h02] = memory.mem[8'h02];
+        code[8'h03] = memory.mem[8'h03];
+        code[8'h04] = memory.mem[8'h04];
+        code[8'h05] = memory.mem[8'h05];
+        code[8'h06] = memory.mem[8'h06];
+        code[8'h07] = memory.mem[8'h07];
+        code[8'h08] = memory.mem[8'h08];
+        code[8'h09] = memory.mem[8'h09];
+        code[8'h10] = memory.mem[8'h10];
+    end
+     
   
 endmodule
