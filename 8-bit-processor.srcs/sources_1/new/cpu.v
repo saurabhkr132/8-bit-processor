@@ -13,6 +13,7 @@ module mux_2x1_8 (output reg [7:0] Z,
     endcase
 endmodule
 
+
 // Use behavioural modelling to achieve correct ALU performance 
 module alu (input [7:0] A, B,
                 input [4:0] SEL,
@@ -23,10 +24,12 @@ module alu (input [7:0] A, B,
       // S4 S3 S2 S1 S0
       5'b00000: {Cout,Z} = A+B; 	// add
       5'b00001: {Cout,Z} = A & B; 	// bitwise and
+      5'b00101: {Cout,Z} = A | B; 	// bitwise or
       5'b00010: Z = A; 				// input A
       5'b00011: Z = B; 				// input B
-      5'b01100: {Cout,Z} = A-B; 	// subtract
-      5'b01110: {Cout,Z} = A*B;     // multiply
+      5'b01100: {Cout,Z} = A - B; 	// subtract
+      5'b01110: {Cout,Z} = A * B;   // multiply
+      5'b01010: div(A,B,Z);
       5'b10100: {Cout,Z} = A + 1; 	// increment
       5'b10000: Z = A; 				// input A
       5'b00100: {Cout,Z} = A+B+1;   // add and increment
@@ -35,6 +38,27 @@ module alu (input [7:0] A, B,
     endcase
   end
   
+  
+task div;
+    input [7:0] dividend;
+    input [7:0] divisor;
+    output reg [7:0] quotient;
+    reg [7:0] remainder;
+    integer i;
+    
+    begin
+        quotient = 0;
+        remainder = dividend;
+        if (divisor != 0) begin
+            for (i = 0; remainder >= divisor; i = i + 1) begin
+                remainder = remainder - divisor;
+                quotient = quotient + 1;
+            end
+        end
+    end
+endtask
+
+
 endmodule
 
 
@@ -110,7 +134,7 @@ endmodule
 module instruction_decoder (input [7:0] A,
                             input DECODE, EXECUTE,
                             output reg ADD, LOAD, OUTPUT, INPUT, JUMPZ, 
-                            	   JUMP, JUMPNZ, JUMPC, JUMPNC, SUB, BITAND, MUL);
+                            	   JUMP, JUMPNZ, JUMPC, JUMPNC, SUB, BITAND, BITOR, MUL, DIV);
   reg or_out;
    
   always @(*) begin
@@ -124,15 +148,17 @@ module instruction_decoder (input [7:0] A,
         8'b1000xxxx: JUMP = 1;
         8'b0110xxxx: SUB = 1;
         8'b0111xxxx: MUL = 1;
+        8'b0101xxxx: DIV = 1;
         8'b0001xxxx: BITAND = 1;
+        8'b0011xxxx: BITOR = 1;
         8'b100100xx: JUMPZ = 1;
         8'b100101xx: JUMPNZ = 1;
         8'b100110xx: JUMPC = 1;
         8'b100111xx: JUMPNC = 1;
-        default: {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND,MUL} = 12'b00000000000;
+        default: {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND,BITOR,MUL, DIV} = 14'b0000000000000;
       endcase
     else
-      {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND,MUL} = 12'b00000000000;
+      {ADD,LOAD,OUTPUT,INPUT,JUMPZ,JUMP,JUMPNZ,JUMPC,JUMPNC,SUB,BITAND,BITOR,MUL, DIV} = 14'b0000000000000;
   end
 endmodule
 
@@ -142,7 +168,7 @@ module decoder (input [7:0] IR,
                 input Carry, Zero, CLK, CE, CLR,
                 output reg RAM, ALU_S4, ALU_S3, ALU_S2, ALU_S1, ALU_S0, MUXA, MUXB, MUXC, EN_IN, EN_DA, EN_PC );
   
-  wire fetch, decode, execute, increment, carry_reg, zero_reg, add, load, instr_output, instr_input, jumpz, jump, jumpnz, jumpc, jumpnc, sub, bitand, jump_not_taken, mul;
+  wire fetch, decode, execute, increment, carry_reg, zero_reg, add, load, instr_output, instr_input, jumpz, jump, jumpnz, jumpc, jumpnc, sub, bitand, bitor, jump_not_taken, mul;
   
   reg en_st, OR5, FDC_D_B4_INV;
   
@@ -153,25 +179,25 @@ module decoder (input [7:0] IR,
   register_2 zero_carry(.D({Zero,Carry}), .CLK(CLK), .CE(en_st), .CLR(CLR), .Q({zero_reg,carry_reg}));
   
   // place instruction decoder module with explicit port connnections
-  instruction_decoder instruction_decoder(.A(IR), .DECODE(decode), .EXECUTE(execute), .ADD(add), .LOAD(load), .OUTPUT(instr_output), .INPUT(instr_input), .JUMPZ(jumpz), .JUMP(jump), .JUMPNZ(jumpnz), .JUMPC(jumpc), .JUMPNC(jumpnc), .SUB(sub), .BITAND(bitand), .MUL(mul));
+  instruction_decoder instruction_decoder(.A(IR), .DECODE(decode), .EXECUTE(execute), .ADD(add), .LOAD(load), .OUTPUT(instr_output), .INPUT(instr_input), .JUMPZ(jumpz), .JUMP(jump), .JUMPNZ(jumpnz), .JUMPC(jumpc), .JUMPNC(jumpnc), .SUB(sub), .BITAND(bitand), .BITOR(bitor), .MUL(mul), .DIV(div));
   
   // jump not taken register
   dff jump_n_taken(.D(~FDC_D_B4_INV), .CE(1'b1), .CLR(CLR), .C(CLK), .Q(jump_not_taken));
   
   always @(*) begin   // combinational logic
-    en_st = (add|sub|bitand|mul);
+    en_st = (add|sub|bitand|bitor|mul|div);
     RAM = (execute&instr_output);
     OR5 = (jump|jumpz|jumpnz|jumpc|jumpnc);
-    ALU_S0 = (OR5|load|instr_input|bitand);
-    ALU_S1 = (OR5|instr_output|instr_input|load|mul);
-    ALU_S2 = (increment|sub|mul);
-    ALU_S3 = (sub|mul);
+    ALU_S0 = (OR5|load|instr_input|bitand|bitor);
+    ALU_S1 = (OR5|instr_output|instr_input|load|mul|div);
+    ALU_S2 = (increment|sub|mul|bitor);
+    ALU_S3 = (sub|mul|div);
     ALU_S4 = increment;
     MUXA = increment;
-    MUXB = (load|add|bitand|sub|mul);
+    MUXB = (load|add|bitand|bitor|sub|mul|div);
     MUXC = (instr_input|instr_output);
     EN_IN = fetch;
-    EN_DA = (execute&(load|add|sub|bitand|mul|instr_input));
+    EN_DA = (execute&(load|add|sub|bitand|bitor|mul|div|instr_input));
     FDC_D_B4_INV = ((jumpz&zero_reg)|(jumpnz&(~zero_reg))|(jumpc&carry_reg)|(jumpnc&(~carry_reg))|jump);
     EN_PC = ((increment&jump_not_taken)|(execute&FDC_D_B4_INV));
   end
@@ -197,9 +223,6 @@ module ram(input we, clk,
     if (~we) 
       dout <= mem[addr];
   end
-
-
-
  
 endmodule
 
@@ -288,7 +311,9 @@ module cpu (input NCLR, CLK,
     parameter JUMP = 8'b10000000;
     parameter SUB = 8'b01100000;
     parameter MUL = 8'b01110000;
+    parameter DIV = 8'b01010000;
     parameter BITAND = 8'b00010000;
+    parameter BITOR = 8'b00110000;
     parameter JUMPZ = 8'b10010000;
     parameter JUMPNZ = 8'b10010100;
     parameter JUMPC = 8'b10011000;
@@ -306,9 +331,9 @@ module cpu (input NCLR, CLK,
     //    ram.mem[8'h05] = {OUTPUT, 8'd9};
     //    ram.mem[8'h06] = {JUMP, 8'd0};
     //    ram.mem[8'h07] = {8'd0, 8'd4};
-        ram.mem[8'h00] = {LOAD, 8'd2};
-        ram.mem[8'h01] = {MUL, 8'd3};
-        ram.mem[8'h02] = {OUTPUT, 8'd3};
+        ram.mem[8'h00] = {LOAD, 8'd26};
+        ram.mem[8'h01] = {DIV, 8'd4};
+        ram.mem[8'h02] = {OUTPUT, 8'd5};
         
     end
     
@@ -326,5 +351,4 @@ module cpu (input NCLR, CLK,
         code[8'h10] = memory.mem[8'h10];
     end
      
-  
 endmodule
