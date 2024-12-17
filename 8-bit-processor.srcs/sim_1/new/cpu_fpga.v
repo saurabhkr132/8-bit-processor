@@ -1,3 +1,5 @@
+// Testbench for simulation of ports as it would be on FPGA (kind of simulating FPGA)
+
 module cpu_fpga;
   
   // Signals

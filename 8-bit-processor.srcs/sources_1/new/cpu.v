@@ -1,3 +1,12 @@
+// Comouter Architecture and Organization Project: 8-bit CPU Design and Implementation
+// Team Logic Architects
+// Members:
+//  Ajit Kumar Singh (SC22B123)
+//  Anurag (SC22B125)
+//  Saurabh Kumar (SC22B146)
+//  Uttam Kumar (SC22B156)
+
+
 `timescale 1ns / 1ps
 
 
@@ -29,7 +38,11 @@ module alu (input [7:0] A, B,
       5'b00011: Z = B; 				// input B
       5'b01100: {Cout,Z} = A - B; 	// subtract
       5'b01110: {Cout,Z} = A * B;   // multiply
-      5'b01010: div(A,B,Z);
+//      5'b01010: div(A,B,Z);         // divide
+      5'b01010: Z = A / B;           // divide
+//      5'b01010: fact(A,B,Z);        // factorial
+//      5'b01010: hcf(A,B,Z);         // hcf
+//      5'b01010: conv(A,B,Z);         // conv
       5'b10100: {Cout,Z} = A + 1; 	// increment
       5'b10000: Z = A; 				// input A
       5'b00100: {Cout,Z} = A+B+1;   // add and increment
@@ -38,6 +51,19 @@ module alu (input [7:0] A, B,
     endcase
   end
   
+//task conv;
+//    input [7:0] A;
+//    input [7:0] B;
+//    output reg [7:0] result;
+    
+//    integer k, m;
+    
+//    for (k=0; k<8; k=k+1) begin
+//        for (m=0; m<8; m=m+1) begin
+//            result[k] = A[m-A[7]]*B[k-m-B[7]];
+//        end
+//    end
+//endtask
   
 task div;
     input [7:0] dividend;
@@ -76,8 +102,8 @@ endmodule
 module register_2 (input [1:0] D, 
                    input CLK, CE, CLR,
                    output [1:0] Q);
-  dff D0(D[0], CE, CLR, CLK, Q[0]);
-  dff D1(D[1], CE, CLR, CLK, Q[1]);
+  dff Zero(D[0], CE, CLR, CLK, Q[0]);
+  dff Carry(D[1], CE, CLR, CLK, Q[1]);
 endmodule
 
 
@@ -203,6 +229,8 @@ module decoder (input [7:0] IR,
   end
 endmodule
 
+
+    
 // 16 bit 256 address ram module
 // 8 bit address gives 256 locations
 // Memory is von Neumann architecture - instructions and data stored together
@@ -212,11 +240,35 @@ module ram(input we, clk,
            output reg [15:0] dout);
   reg [15:0] mem [255:0]; //256 16 bit regs
   
-  //instructions are 16 bits but data is 8 bits. Pad the first byte of data with 0x00
-   
+   // Load instruction and data into RAM during reset cycle at start
+   //instructions are 16 bits but data is 8 bits. Pad the first byte of data with 0x00
+   // OP CODES
+    parameter INPUT = 8'b10100000;
+    parameter OUTPUT = 8'b11100000;
+    parameter LOAD = 8'b00000000;
+    parameter ADD = 8'b01000000;
+    parameter JUMP = 8'b10000000;
+    parameter SUB = 8'b01100000;
+    parameter MUL = 8'b01110000;
+    parameter DIV = 8'b01010000;
+    parameter BITAND = 8'b00010000;
+    parameter BITOR = 8'b00110000;
+    parameter JUMPZ = 8'b10010000;
+    parameter JUMPNZ = 8'b10010100;
+    parameter JUMPC = 8'b10011000;
+    parameter JUMPNC = 8'b10011100;
+    
+    // PROGRAMMING INSTRUCTIONS
+    initial
+    begin
+        mem[8'h00] = {LOAD, 8'd05};
+        mem[8'h01] = {MUL, 8'd03};
+        mem[8'h02] = {OUTPUT, 8'hFF};
+    end
+    
   always @ (posedge clk) begin
     if (we)
-      mem[addr] <= din;
+        mem[addr] <= din;
   end
   
   always @ (posedge clk) begin
@@ -226,21 +278,49 @@ module ram(input we, clk,
  
 endmodule
 
+// module to convert hexadecimal result to seven segment display
+module hex_to_7seg (
+    input [3:0] hex,       // 4-bit hex input (0x0 to 0xF)
+    output reg [6:0] Out // 7-segment output
+);
+
+    always @ (hex) begin
+        case (hex)
+            4'b0000: Out = 7'b1111110; // 0
+            4'b0001: Out = 7'b0110000; // 1
+            4'b0010: Out = 7'b1101101; // 2
+            4'b0011: Out = 7'b1111001; // 3
+            4'b0100: Out = 7'b0110011; // 4
+            4'b0101: Out = 7'b1011011; // 5
+            4'b0110: Out = 7'b1011111; // 6
+            4'b0111: Out = 7'b1110000; // 7
+            4'b1000: Out = 7'b1111111; // 8
+            4'b1001: Out = 7'b1111011; // 9
+            4'b1010: Out = 7'b1110111; // A
+            4'b1011: Out = 7'b0011111; // B
+            4'b1100: Out = 7'b1001110; // C
+            4'b1101: Out = 7'b0111101; // D
+            4'b1110: Out = 7'b1001111; // E
+            4'b1111: Out = 7'b1000111; // F
+            default: Out = 7'b0000000; // Turn off all segments for invalid input
+        endcase
+    end
+endmodule
 
 // top module tying everything together
 // active low reset signal on NCLR. Assert reset cycle at start to reset registers
-// SERIAL_OUT output is only needed for testing physical operation on an FPGA with an oscilloscope
-// Load instruction and data into RAM during reset cycle at start
-// Can see result of operations on ACC_Q wire 
+// SERIAL_OUT output is only needed for testing physical operation on an FPGA
+
 
 module cpu (input NCLR, CLK,
-            	 output reg SERIAL_OUT);
+            	 output reg [6:0] out, reg [3:0] out_led, reg disp1, reg disp2, reg SERIAL_OUT);
   
   wire FD_CLR, FDCE_Q, EN_IN, EN_PC, EN_DA, ALU_S4,ALU_S3,ALU_S2,ALU_S1,ALU_S0, CARRY, RAM_WE, MUXA, MUXB, MUXC;
   wire [7:0] ACC_Q, MUX_A_Q, MUX_B_Q, MUX_C_Q, PC_Q, ALU_Q;
   wire [15:0] CPU_DI, IR_Q;
+  wire [6:0] res_0, res_1;
   
-  reg [15:0] code [255:0];
+//  reg [15:0] code [255:0];
   
   
   
@@ -280,7 +360,41 @@ module cpu (input NCLR, CLK,
   
   // Decoder to interpret instruction from upper byte of instruction register
   decoder decoder(.IR(IR_HIGH), .Carry(CARRY), .Zero(ZERO), .CLK(CLK), .CE(1'b1), .CLR(FD_CLR), .RAM(RAM_WE), .ALU_S4(ALU_S4), .ALU_S3(ALU_S3), .ALU_S2(ALU_S2), .ALU_S1(ALU_S1), .ALU_S0(ALU_S0), .MUXA(MUXA), .MUXB(MUXB), .MUXC(MUXC), .EN_IN(EN_IN), .EN_DA(EN_DA), .EN_PC(EN_PC));
-            
+  
+  
+  hex_to_7seg hex_to_7seg_0(.hex(memory.mem[8'hFF][3:0]), .Out(res_0));
+  hex_to_7seg hex_to_7seg_1(.hex(memory.mem[8'hFF][7:4]), .Out(res_1));
+
+   
+    
+    // Seven segment display multiplexing
+    integer COUNT = 10; // displaying one digit at a time for 10 clock pulses
+    integer counter; // counter to add the delay
+    
+    initial begin
+        disp1 <= 1;
+        disp2 <= 1;
+        counter <= 0; 
+    end
+    
+    always @(posedge CLK) begin
+        if(counter == COUNT) begin
+            counter = 0;
+        end
+        else if (counter >= COUNT/2) begin
+            counter <= counter + 1;
+            disp1 <= 1;
+            disp2 <= 0;
+            out = res_1;
+        end
+        else begin
+            counter <= counter + 1;
+            disp1 <= 0;
+            disp2 <= 1;
+            out = res_0;
+        end
+    end
+          
   always @(*) begin
     // Split instruction register output into 2 bytes
     IR_LOW = IR_Q[7:0]; // Data byte
@@ -298,57 +412,16 @@ module cpu (input NCLR, CLK,
     // Serial ouptut for use with oscilloscope if programming an FPGA
     SERIAL_OUT = ~FDCE_Q;
    
-
     
   end
   
-  
-    // PROGRAMMING INSTRUCTIONS
-    parameter INPUT = 8'b10100000;
-    parameter OUTPUT = 8'b11100000;
-    parameter LOAD = 8'b00000000;
-    parameter ADD = 8'b01000000;
-    parameter JUMP = 8'b10000000;
-    parameter SUB = 8'b01100000;
-    parameter MUL = 8'b01110000;
-    parameter DIV = 8'b01010000;
-    parameter BITAND = 8'b00010000;
-    parameter BITOR = 8'b00110000;
-    parameter JUMPZ = 8'b10010000;
-    parameter JUMPNZ = 8'b10010100;
-    parameter JUMPC = 8'b10011000;
-    parameter JUMPNC = 8'b10011100;
-    
-    initial
-    begin
-    // PROGRAMMING
-    
-    //    ram.mem[8'h00] = {INPUT, 8'd7};
-    //    ram.mem[8'h01] = {ADD, 8'd1};
-    //    ram.mem[8'h02] = {OUTPUT, 8'd8};
-    //    ram.mem[8'h03] = {LOAD, 8'd255};
-    //    ram.mem[8'h04] = {SUB, 8'd2};
-    //    ram.mem[8'h05] = {OUTPUT, 8'd9};
-    //    ram.mem[8'h06] = {JUMP, 8'd0};
-    //    ram.mem[8'h07] = {8'd0, 8'd4};
-        ram.mem[8'h00] = {LOAD, 8'd26};
-        ram.mem[8'h01] = {DIV, 8'd4};
-        ram.mem[8'h02] = {OUTPUT, 8'd5};
+    // Displaying 4 LSB of the results on the 4 LEDs for the FPGA
+    always @(*) begin
+        out_led[0] = memory.mem[8'hFF][0];
+        out_led[1] = memory.mem[8'hFF][1];
+        out_led[2] = memory.mem[8'hFF][2];
+        out_led[3] = memory.mem[8'hFF][3];
         
     end
     
-    always @(*) begin
-        code[8'h00] = memory.mem[8'h00];
-        code[8'h01] = memory.mem[8'h01];
-        code[8'h02] = memory.mem[8'h02];
-        code[8'h03] = memory.mem[8'h03];
-        code[8'h04] = memory.mem[8'h04];
-        code[8'h05] = memory.mem[8'h05];
-        code[8'h06] = memory.mem[8'h06];
-        code[8'h07] = memory.mem[8'h07];
-        code[8'h08] = memory.mem[8'h08];
-        code[8'h09] = memory.mem[8'h09];
-        code[8'h10] = memory.mem[8'h10];
-    end
-     
 endmodule
