@@ -1,8 +1,0 @@
-0.7
-2020.2
-May 22 2024
-19:03:11
-D:/Projects/8-bit-processor/8-bit-processor.sim/sim_1/behav/xsim/glbl.v,1708598507,verilog,,,,glbl,,,,,,,,
-D:/Projects/8-bit-processor/8-bit-processor.srcs/sim_1/new/cpu_fpga.v,1731169122,verilog,,,,cpu_fpga,,,,,,,,
-D:/Projects/8-bit-processor/8-bit-processor.srcs/sim_1/new/cpu_tb.v,1731165512,verilog,,,,cpu_tb,,,,,,,,
-D:/Projects/8-bit-processor/8-bit-processor.srcs/sources_1/new/cpu.v,1731175159,verilog,,D:/Projects/8-bit-processor/8-bit-processor.srcs/sim_1/new/cpu_fpga.v,,alu;cpu;decoder;dff;instruction_decoder;mux_2x1_8;ram;register_16;register_2;register_4;register_8;sequence_generator,,,,,,,,
