@@ -11,8 +11,11 @@ This repository contains four files:
 
 To use these files on software like Vivado, add these in the following manner:
 cpu.v: As design source file
+
 cpu_tb.v: As simulation source file
+
 cpu_fpga.v: As simulation source file
+
 control.xdc: As constraints.
 
 The source code is available at: https://github.com/saurabhkr132/8-bit-processor
