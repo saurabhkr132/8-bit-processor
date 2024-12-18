@@ -10,6 +10,7 @@ This repository contains four files:
 4. control.xdc: This contains the physical and clock constrains, specifically for Xilinx PYNQ-Z2 FPGA board.
 
 To use these files on software like Vivado, add these in the following manner:
+
 cpu.v: As design source file
 
 cpu_tb.v: As simulation source file
